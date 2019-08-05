@@ -38,3 +38,6 @@ To avoid out of memory in training phase, our parser should be trained with 12GB
 
 ## Details
 If you want to see some details of our parser, the source code for our parser is in `parser/structs/vocabs/second_order_vocab.py` for Mean Field Variational Inference and `second_order_LBP_vocab.py` for Loopy Belief Propagation in the same directory.
+
+##Contact
+If you have any questions, feel free to contact with me with [email](mailto:wangxy1@shanghaitech.edu.cn)
