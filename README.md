@@ -1,4 +1,4 @@
-# Second_Order SDP
+# Second Order SDP
 Second Order Parser for Semantic Dependency Parsing
 
 This repo contains the code forked from [Parser-v3](https://github.com/tdozat/Parser-v3) and used for the semantic dependency parser in Wang et al. (2019), [Second-Order Semantic Dependency Parsing with End-to-End Neural Networks](https://arxiv.org/abs/1906.07880). If you find our code is useful, please cite:
