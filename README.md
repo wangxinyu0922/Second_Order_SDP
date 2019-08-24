@@ -16,7 +16,6 @@ This repo contains the code forked from [Parser-v3](https://github.com/tdozat/Pa
     url = "https://www.aclweb.org/anthology/P19-1454",
     pages = "4609--4618",}
 ```
-
 ## How to use
 ### Training
 Our second order parser can be trained by simply running
@@ -39,6 +38,9 @@ To avoid out of memory in training phase, our parser should be trained with 12GB
 
 ## Details
 If you want to see some details of our parser, the source code for our parser is in `parser/structs/vocabs/second_order_vocab.py` for Mean Field Variational Inference and `second_order_LBP_vocab.py` for Loopy Belief Propagation in the same directory.
+
+## Train With Bert Embedding
+Our code for [CoNLL 2019 shared task](http://mrp.nlpl.eu/) (SDP part) will be updated soon.
 
 ## Contact
 If you have any questions, feel free to contact with me through [email](mailto:wangxy1@shanghaitech.edu.cn).
