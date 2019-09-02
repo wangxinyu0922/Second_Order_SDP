@@ -20,11 +20,11 @@ This repo contains the code forked from [Parser-v3](https://github.com/tdozat/Pa
 ### Training
 Our second order parser can be trained by simply running
 ```bash
-python3 -u main.py train GraphParserNetwork --config_file config/sec_order.cfg 
+python3 -u main.py train GraphParserNetwork --config_file config/sec_order.cfg --noscreen
 ```
 This config file will run Mean Field Variational Inference for second order parts, and if you want to run with Loopy Belief Propagation, run
 ```bash
-python3 -u main.py train GraphParserNetwork --config_file config/sec_order_LBP.cfg 
+python3 -u main.py train GraphParserNetwork --config_file config/sec_order_LBP.cfg --noscreen
 ```
 ### Parsing
 A trained model can be run by calling
