@@ -31,7 +31,7 @@ A trained model can be run by calling
 ```bash
 python3 main.py --save_dir $SAVEDIR run $DATADIR --output_dir results 
 ```
-The parsed result will be saved `results/` directory. The `$SAVEDIR` is the directory of the model, for example, if you trained `config/sec_order.cfg`, the model will be saved in `saves/SemEval15/DM/MF_dm_3iter`. The `$DATADIR` is the directory of the data in `CONLLU` format.
+The parsed result will be saved `results/` directory. The `$SAVEDIR` is the directory of the model, for example, if you trained with `config/sec_order.cfg`, the model will be saved in `saves/SemEval15/DM/MF_dm_3iter`. The `$DATADIR` is the directory of the data in `CONLLU` format.
 
 ## OOM issue
 To avoid out of memory in training phase, our parser should be trained with 12GB gpu memory, and no longer than 60 words for each sentence. The number of iterations for mean field variational inference is at most 3 and at most 2 for loopy belief propagation in a 12GB Titan X gpu. If you have a larger gpu, such as Tesla P40 24GB, loopy belief propation can be also trained with 3 iterations. To set the number of iterations, set `num_iteration` in `SecondOrderGraphIndexVocab` or `SecondOrderGraphLBPVocab` of the config file. Another way is reduce the training `batch_size` in `CoNLLUTrainset` of the config file.
