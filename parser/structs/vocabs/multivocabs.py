@@ -24,12 +24,14 @@ import tensorflow as tf
 
 from .base_vocabs import BaseVocab
 from . import conllu_vocabs as cv
+from . import mrp_vocabs as mv
 from . import token_vocabs as tv
 from . import pretrained_vocabs as pv
 from . import subtoken_vocabs as sv
-
+from . import bert_vocabs as bv
+from . import RNNDecoder_vocab as rv
 from parser.neural import embeddings
-
+import json
 import pdb
 #***************************************************************
 class Multivocab(BaseVocab, list): 
@@ -38,6 +40,7 @@ class Multivocab(BaseVocab, list):
   _token_vocab_class = None
   _subtoken_vocab_class = None
   _pretrained_vocab_class = None
+  _bert_vocab_class = None
   
   #=============================================================
   def __init__(self, config=None):
@@ -45,7 +48,10 @@ class Multivocab(BaseVocab, list):
     
     super(Multivocab, self).__init__(config=config)
     list.__init__(self)
-    
+    self.BOS_STR = '<bos>'
+    self.BOS_IDX = 999998
+    self.EOS_STR = '<eos>'
+    self.EOS_IDX = 999999
     # Set up the frequent-token vocab
     use_token_vocab = config.getboolean(self, 'use_token_vocab')
     if use_token_vocab:
@@ -74,7 +80,15 @@ class Multivocab(BaseVocab, list):
       self.extend(pretrained_vocabs)
     else:
       pretrained_vocabs = []
-      
+    try:
+      use_bert_vocab = config.getboolean(self, 'use_bert_vocab')
+    except:
+      use_bert_vocab = False
+    if use_bert_vocab:
+      bert_vocabs = self._bert_vocab_class(config=config)
+      self.append(bert_vocabs)
+    else:
+      bert_vocabs = None
     # Set the special tokens
     for base_special_token in self[0].base_special_tokens:
       self.__dict__[base_special_token.upper()+'_STR'] = self[0].__dict__[base_special_token.upper()+'_STR']
@@ -83,6 +97,7 @@ class Multivocab(BaseVocab, list):
     self._token_vocab = token_vocab
     self._subtoken_vocab = subtoken_vocab
     self._pretrained_vocabs = pretrained_vocabs
+    self._bert_vocabs = bert_vocabs
     return
   
   #=============================================================
@@ -94,6 +109,21 @@ class Multivocab(BaseVocab, list):
       status = (vocab.load() if hasattr(vocab, 'load') else True) and status
     return status
   
+  def count_mrp(self, mrp):
+    """"""
+    # pdb.set_trace()
+    mrp_file=json.load(open(mrp))
+    for vocab in self:
+    
+      for sentence_id in mrp_file:
+        for current_data in mrp_file[sentence_id]['nodes']:
+          try:
+            token = current_data[vocab.field]
+          except:
+            pdb.set_trace()
+          vocab._count(token)
+      vocab.index_by_counts()
+    return True
   #=============================================================
   def count(self, train_conllus):
     """"""
@@ -115,10 +145,14 @@ class Multivocab(BaseVocab, list):
     with tf.variable_scope(self.field):
       input_tensors = []
       if self._pretrained_vocabs:
+        #pdb.set_trace()
         with tf.variable_scope('Pretrained') as variable_scope:
           input_tensors.extend([pretrained_vocab.get_input_tensor(embed_keep_prob=1., variable_scope=variable_scope, reuse=reuse) for pretrained_vocab in self._pretrained_vocabs])
           nonzero_init = False
-      
+      if self._bert_vocabs is not None:
+        with tf.variable_scope('BertToken') as variable_scope:
+          input_tensors.append(self._bert_vocabs.get_input_tensor(nonzero_init=nonzero_init, embed_keep_prob=1., variable_scope=variable_scope, reuse=reuse))
+          nonzero_init = False
       if self._subtoken_vocab is not None:
         with tf.variable_scope('Subtoken') as variable_scope:
           input_tensors.append(self._subtoken_vocab.get_input_tensor(nonzero_init=nonzero_init, embed_keep_prob=1., variable_scope=variable_scope, reuse=reuse))
@@ -152,7 +186,7 @@ class Multivocab(BaseVocab, list):
   #=============================================================
   def set_placeholders(self, indices, feed_dict={}):
     """"""
-    
+    #pdb.set_trace()
     for i, vocab in enumerate(self):
       vocab.set_placeholders(indices[:,:,i], feed_dict=feed_dict)
     return feed_dict
@@ -163,6 +197,17 @@ class Multivocab(BaseVocab, list):
     
     return self.ROOT_STR
   
+  #=============================================================
+  def get_bos(self):
+    """"""
+    
+    return self.BOS_STR
+  
+  #=============================================================
+  def get_eos(self):
+    """"""
+    
+    return self.EOS_STR
   #=============================================================
   def open(self):
     for vocab in self:
@@ -201,6 +246,7 @@ class FormMultivocab(Multivocab, cv.FormVocab):
   _token_vocab_class = tv.FormTokenVocab
   _subtoken_vocab_class = sv.FormSubtokenVocab
   _pretrained_vocab_class = pv.FormPretrainedVocab
+  _bert_vocab_class = bv.FormBertVocab
 class LemmaMultivocab(Multivocab, cv.LemmaVocab):
   _token_vocab_class = tv.LemmaTokenVocab
   _subtoken_vocab_class = sv.LemmaSubtokenVocab
@@ -218,3 +264,24 @@ class DeprelMultivocab(Multivocab, cv.DeprelVocab):
   _subtoken_vocab_class = sv.DeprelSubtokenVocab
   _pretrained_vocab_class = pv.DeprelPretrainedVocab
   #pdb.set_trace()
+
+class LabelTokenVocab(tv.TokenVocab, mv.LabelVocab):
+  pass
+#-----------------------------------------------------------
+# class LabelTokenVocab(tv.TokenVocab, mv.LabelVocab):
+#   def set_placeholders(self, indices, feed_dict={}):
+
+
+#-----------------------------------------------------------
+
+class LabelSubtokenVocab(sv.SubtokenVocab, mv.LabelVocab):
+  pass  
+class LabelPretrainedVocab(pv.PretrainedVocab, mv.LabelVocab):
+  pass  
+class LabelBertVocab(bv.BertVocab, mv.LabelVocab):
+  pass  
+class Seq2SeqLabelMultivocab(Multivocab, mv.LabelVocab):
+  _token_vocab_class = LabelTokenVocab
+  _subtoken_vocab_class = LabelSubtokenVocab
+  _pretrained_vocab_class = LabelPretrainedVocab
+  _bert_vocab_class = LabelBertVocab

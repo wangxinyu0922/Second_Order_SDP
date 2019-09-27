@@ -34,6 +34,7 @@ class Optimizer(object):
     self._accumulators = {}
     self._global_step = tf.Variable(0., trainable=False, name='global_step')
     self._config = config
+    self.decay_counts = tf.Variable(0., trainable=False, name='decay_counts')
     return
   
   #=============================================================
@@ -44,6 +45,7 @@ class Optimizer(object):
     new_optimizer = cls(config=optimizer._config)
     new_optimizer._accumulators = optimizer._accumulators
     new_optimizer._global_step = optimizer._global_step
+    new_optimizer.decay_counts = optimizer.decay_counts
     return new_optimizer
   
   #=============================================================
@@ -191,7 +193,10 @@ class Optimizer(object):
   @property
   def annealed_learning_rate(self):
     #return self.learning_rate * tf.exp(-self.decay_rate*self.global_step)
-    return self.learning_rate * tf.pow(self.decay_rate, (self.global_step/self.decay_steps))
+    if not self.loss_based_decay_schedule and not self.improvement_based_decay_schedule:
+      return self.learning_rate * tf.pow(self.decay_rate, (self.global_step/self.decay_steps))
+    else:
+      return self.learning_rate * tf.pow(self.decay_rate, self.decay_counts)
   @property
   def mu(self):
     return self._config.getfloat(self, 'mu')
@@ -210,3 +215,15 @@ class Optimizer(object):
   @property
   def global_step(self):
     return self._global_step
+  @property
+  def loss_based_decay_schedule(self):
+    try:
+      return self._config.getboolean(self, 'loss_based_decay_schedule')
+    except:
+      return False
+  @property
+  def improvement_based_decay_schedule(self):
+    try:
+      return self._config.getboolean(self, 'improvement_based_decay_schedule')
+    except:
+      return False

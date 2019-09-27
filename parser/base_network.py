@@ -38,9 +38,13 @@ from parser.structs import conllu_dataset
 from parser.structs import vocabs
 from parser.neural.optimizers import AdamOptimizer, AMSGradOptimizer
 
+import uuid
+uid = uuid.uuid4().hex[:6]
 import pdb
 
 import sys, os
+
+from tensorflow.python import debug as tf_debug
 
 # Disable
 def blockPrint():
@@ -83,27 +87,51 @@ class BaseNetwork(object):
 			extant_vocabs['IDIndexVocab'] = self._id_vocab
 
 		self._input_vocabs = []
+		self._decoder_vocabs = []
 		for input_vocab_classname in self.input_vocab_classes:
 			if input_vocab_classname in extant_vocabs:
 				self._input_vocabs.append(extant_vocabs[input_vocab_classname])
 			else:
 				VocabClass = getattr(vocabs, input_vocab_classname)
 				vocab = VocabClass(config=config)
-				vocab.load() or vocab.count(self.train_conllus)
-				self._input_vocabs.append(vocab)
+				if hasattr(vocab,'conllu_idx'):
+					# pdb.set_trace()
+					vocab.load() or vocab.count(self.train_conllus)
+					self._input_vocabs.append(vocab)
+				else:
+					#pdb.set_trace()
+					vocab.load() or vocab.count_mrp(self.get_nodes_path)
+					#vocab.count(self.get_nodes_path)
+					self._decoder_vocabs.append(vocab)
 				extant_vocabs[input_vocab_classname] = vocab
+			if 'Bert' in input_vocab_classname:
+				self.use_bert=True
+				self.bertvocab=self._input_vocabs[-1]
+				self.pretrained_bert=self.bertvocab.get_pretrained
+			else:
+				self.use_bert=False
 		#pdb.set_trace()
 		self._output_vocabs = []
+		self.use_seq2seq=False
 		for output_vocab_classname in self.output_vocab_classes:
+			if 'seq2seq' in output_vocab_classname.lower():
+				self.use_seq2seq=True
 			if output_vocab_classname in extant_vocabs:
 				self._output_vocabs.append(extant_vocabs[output_vocab_classname])
 			else:#create index vocabs and token vocabs (network)
 				VocabClass = getattr(vocabs, output_vocab_classname)
 				vocab = VocabClass(config=config)
-				vocab.load() or vocab.count(self.train_conllus)
+				if hasattr(vocab,'conllu_idx'):
+					vocab.load() or vocab.count(self.train_conllus)
+				else:
+					vocab.load() or vocab.count(self.get_nodes_path)
 				self._output_vocabs.append(vocab)
 				extant_vocabs[output_vocab_classname] = vocab
-
+		if self.use_seq2seq:
+			# pdb.set_trace()
+			self._node_id_vocab = vocabs.Seq2SeqIDVocab(config=config)
+			# self._output_vocabs.append(self._node_id_vocab)
+			extant_vocabs[self._node_id_vocab.classname] = self._node_id_vocab
 		self._throughput_vocabs = []
 		for throughput_vocab_classname in self.throughput_vocab_classes:
 			if throughput_vocab_classname in extant_vocabs:
@@ -111,7 +139,10 @@ class BaseNetwork(object):
 			else:
 				VocabClass = getattr(vocabs, throughput_vocab_classname)
 				vocab = VocabClass(config=config)
-				vocab.load() or vocab.count(self.train_conllus)
+				if hasattr(vocab,'conllu_idx'):
+					vocab.load() or vocab.count(self.train_conllus)
+				else:
+					vocab.load() or vocab.count(vocab.get_nodes_path)
 				self._throughput_vocabs.append(vocab)
 				extant_vocabs[throughput_vocab_classname] = vocab
 
@@ -211,9 +242,15 @@ class BaseNetwork(object):
 		#config.gpu_options.per_process_gpu_memory_fraction = 0.95
 		config.allow_soft_placement = True
 		with tf.Session(config=config) as sess:
+			sess.run(tf.global_variables_initializer())
+			#BUG! save.restore should after global initializer
 			for saver, path in zip(input_network_savers, input_network_paths):
 				saver.restore(sess, path)
-			sess.run(tf.global_variables_initializer())
+			
+			if self.use_bert and not self.pretrained_bert:
+				self.bertvocab.modelInit(sess)
+
+
 			##---
 			#os.makedirs(os.path.join(self.save_dir, 'profile'))
 			#options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
@@ -370,6 +407,15 @@ class BaseNetwork(object):
 					best_accuracy = 0
 					current_accuracy = 0
 					steps_since_best = 0
+					decay_rate = 0
+					bad_iteration_count = 0
+					best_loss=9999999999999
+					if self.classname=='ParserNetwork':
+						class_target='deptree'
+					elif self.classname=='GraphParserNetwork':
+						class_target='semgraph'
+					else:
+						class_target=''
 					while (not self.max_steps or current_step < self.max_steps) and \
 								(not self.max_steps_without_improvement or steps_since_best < self.max_steps_without_improvement) and \
 								(not self.n_passes or current_epoch < len(trainset.conllu_files)*self.n_passes):
@@ -382,10 +428,18 @@ class BaseNetwork(object):
 								current_optimizer = 'AMSGrad'
 							print('\t', end='')
 							print('Current optimizer: {}\n'.format(current_optimizer), end='')
-						for batch in trainset.batch_iterator(shuffle=True):
+						for batch in trainset.batch_iterator(shuffle=False):
 							train_outputs.restart_timer()
 							start_time = time.time()
 							feed_dict = trainset.set_placeholders(batch)
+							if debug:
+								test=list(feed_dict.keys())
+								# pdb.set_trace()
+								
+							# if debug:
+							#   sess=tf_debug.LocalCLIDebugWrapperSession(sess)
+							# pdb.set_trace()
+							# exit()
 							##---
 							#if current_step < 10:
 							#  _, train_scores = sess.run(train_tensors, feed_dict=feed_dict, options=options, run_metadata=run_metadata)
@@ -398,40 +452,111 @@ class BaseNetwork(object):
 							#run_options = tf.RunOptions(report_tensor_allocations_upon_oom = True)
 							run_options = tf.RunOptions()
 							_, train_scores, printdata = sess.run(train_tensors, feed_dict=feed_dict, options=run_options)
+							
 							if debug:
-								#pdb.set_trace()
+								# pdb.set_trace()
 								pass
 							##---
 							train_outputs.update_history(train_scores)
 							current_step += 1
 							if current_step % self.print_every == 0:
+								if current_optimizer=='Adam':
+									current_optm=adam
+								elif current_optimizer=='AMSGrad':
+									current_optm=amsgrad
+
 								if debug:
-									pdb.set_trace()
+									# pdb.set_trace()
 									pass
-								for batch in devset.batch_iterator(shuffle=False):
-									dev_outputs.restart_timer()
-									feed_dict = devset.set_placeholders(batch)
-									dev_scores, devprint = sess.run(dev_tensors, feed_dict=feed_dict)
-									dev_outputs.update_history(dev_scores)
-								#current_accuracy *= .5
-								#current_accuracy += .5*dev_outputs.get_current_accuracy()
-								current_accuracy = dev_outputs.get_current_accuracy()
-								if current_accuracy >= best_accuracy:
+								if self.dev_mst:
+									# pdb.set_trace()
+									self.parse_file(devset, dev_outputs, sess, output_dir='results', output_filename='dev_temp_'+str(uid)+'.conllu', print_time=False)
+									correct=self.evaluate('results/dev_temp_'+str(uid)+'.conllu', devset._conllu_files[0])
+									correct_punct=self.evaluate('results/dev_temp_'+str(uid)+'.conllu', devset._conllu_files[0], punct=[])
+									if self.average_AS:
+										current_accuracy=(correct['LAS']+correct['UAS'])/2
+									else:
+										current_accuracy=correct['LAS']
+								else:
+									for batch in devset.batch_iterator(shuffle=False):
+										dev_outputs.restart_timer()
+										feed_dict = devset.set_placeholders(batch)
+										try:
+											dev_scores, devprint = sess.run(dev_tensors, feed_dict=feed_dict)
+										except:
+											pdb.set_trace()
+										# pdb.set_trace()
+										dev_outputs.update_history(dev_scores)
+									#current_accuracy *= .5
+									#current_accuracy += .5*dev_outputs.get_current_accuracy()
+									current_accuracy = dev_outputs.get_current_accuracy()
+								if self.dev_mst:
+									if self.average_AS:
+										target_bool=current_accuracy >= best_accuracy
+									else:
+										target_bool=current_accuracy > best_accuracy or (current_accuracy==best_accuracy and correct['UAS'] > best['UAS'])
+									if target_bool:
+										best_punct=correct_punct
+										best=correct
+										steps_since_best = 0
+										best_accuracy = current_accuracy
+										if self.save_model_after_improvement:
+											saver.save(sess, os.path.join(self.save_dir, 'ckpt'), global_step=self.global_step, write_meta_graph=False)
+											if self.use_bert:
+												if self.bertvocab.is_training:
+													self.bertvocab.modelSave(sess,os.path.join(self.save_dir,'bert'),self.global_step)
+										if self.parse_devset:
+											self.parse_files(devset, dev_outputs, sess, print_time=False)
+									else:
+										steps_since_best += self.print_every
+								elif current_accuracy >= best_accuracy:
 									steps_since_best = 0
 									best_accuracy = current_accuracy
 									if self.save_model_after_improvement:
-										#pdb.set_trace()
 										saver.save(sess, os.path.join(self.save_dir, 'ckpt'), global_step=self.global_step, write_meta_graph=False)
+										if self.use_bert:
+											if self.bertvocab.is_training:
+												self.bertvocab.modelSave(sess,os.path.join(self.save_dir,'bert'),self.global_step)
 									if self.parse_devset:
 										self.parse_files(devset, dev_outputs, sess, print_time=False)
 								else:
 									steps_since_best += self.print_every
+
+
+								if self.loss_based_decay_schedule:
+									current_loss=train_outputs.history[class_target]['loss'][-1]/train_outputs.history['total']['n_batches']
+									if current_loss<best_loss:
+										best_loss=current_loss
+										bad_iteration_count=0
+									else:
+										bad_iteration_count+=self.print_every
+									if bad_iteration_count>=self.decay_steps:
+										bad_iteration_count=0
+										sess.run(tf.assign_add(current_optm.decay_counts,1))
+								elif self.improvement_based_decay_schedule:
+									if steps_since_best>0:
+										bad_iteration_count+=self.print_every
+									else:
+										bad_iteration_count=0
+									if bad_iteration_count>=self.decay_steps:
+										sess.run(tf.assign_add(current_optm.decay_counts,1))
+										bad_iteration_count=0
+
+								if debug:
+									pdb.set_trace()
+									pass
+
 								current_epoch = sess.run(self.global_step)
 								#pdb.set_trace()
 								if current_optimizer=='SGD':
 									print('Current LR: {:3f}'.format(float(sess.run(learning_rate))))
 								elif current_optimizer=='Adam':
 									print('Current LR: {:3f}'.format(float(sess.run(adam.annealed_learning_rate))))
+								elif current_optimizer=='AMSGrad':
+									print('Current LR: {:3f}'.format(float(sess.run(amsgrad.annealed_learning_rate))))
+								if self.loss_based_decay_schedule:
+									# pdb.set_trace()
+									print('Current decay count: {:d}'.format(int(sess.run(current_optm.decay_counts))))
 								print('\t', end='')
 								print('Epoch: {:3d}'.format(int(current_epoch)), end='')
 								print(' | ', end='')
@@ -443,7 +568,14 @@ class BaseNetwork(object):
 								print('\t', end='')
 								print('Steps since improvement: {:4d}\n'.format(int(steps_since_best)), end='')
 								train_outputs.print_recent_history()
-								dev_outputs.print_recent_history()
+								if self.dev_mst:
+									print('Current dev with punctuations: UAS: {:5.2f}, LAS: {:5.2f}'.format(correct_punct['UAS'],correct_punct['LAS']))
+									print('Best dev with punctuations: UAS: {:5.2f}, LAS: {:5.2f}'.format(best_punct['UAS'],best_punct['LAS']))
+									print('Current dev no punctuations: UAS: {:5.2f}, LAS: {:5.2f}'.format(correct['UAS'],correct['LAS']))
+									print('Best dev no punctuations: UAS: {:5.2f}, LAS: {:5.2f}'.format(best['UAS'],best['LAS']))
+
+								else:
+									dev_outputs.print_recent_history()
 						current_epoch = sess.run(self.global_step)
 						sess.run(update_step)
 						trainset.load_next()
@@ -454,7 +586,32 @@ class BaseNetwork(object):
 			if self.save_model_after_training:
 				saver.save(sess, os.path.join(self.save_dir, 'ckpt'), global_step=self.global_step, write_meta_graph=False)
 		return
-
+	def evaluate(self, filename, target_filename, punct=['.', '``', "''", ':', ',']):
+		""""""
+		
+		correct = {'UAS': [], 'LAS': []}
+		with open(target_filename) as f_tar:
+			with open(filename) as f:
+				for line in f:
+					line_tar = f_tar.readline()
+					line = line.strip().split('\t')
+					line_tar = line_tar.strip().split('\t')
+					if len(line) == 10 and line[4] not in punct:
+						correct['UAS'].append(0)
+						correct['LAS'].append(0)
+						try:
+							assert line_tar[1]==line[1], "two files are not equal!"
+						except:
+							pdb.set_trace()
+						if line[6] == line_tar[6]:
+							correct['UAS'][-1] = 1
+							if line[7] == line_tar[7]:
+								correct['LAS'][-1] = 1
+		#correct = {k:np.array(v) for k, v in correct.iteritems()}
+		correct['UAS']=np.mean(correct['UAS']) * 100
+		correct['LAS']=np.mean(correct['LAS']) * 100
+		return correct
+		#return 'UAS: %.2f    LAS: %.2f\n' % (np.mean(correct['UAS']) * 100, np.mean(correct['LAS']) * 100), correct
 	#=============================================================
 	def parse(self, conllu_files, output_dir=None, output_filename=None, testing=False, debug=False,nornn=False,check_iter=False, gen_tree=False, get_argmax=False):
 		""""""
@@ -506,12 +663,16 @@ class BaseNetwork(object):
 			with tf.variable_scope(self.classname, reuse=False):
 					parse_graph = self.build_graph(reuse=True, debug=debug, nornn=nornn)
 					parse_outputs = DevOutputs(*parse_graph, load=False, factored_deptree=factored_deptree, factored_semgraph=factored_semgraph, config=self._config)
+			#pdb.set_trace()
 			parse_tensors = parse_outputs.accuracies
 			all_variables = set(tf.global_variables())
 			non_save_variables = set(tf.get_collection('non_save_variables'))
-			save_variables = all_variables - non_save_variables
+			if self.use_bert:
+				bert_variables=set(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,scope='bert'))
+			else:
+				bert_variables=set()
+			save_variables = all_variables - non_save_variables - bert_variables
 			saver = tf.train.Saver(list(save_variables), max_to_keep=1)
-
 		if testing:
 			enablePrint()
 		config = tf.ConfigProto()
@@ -522,13 +683,21 @@ class BaseNetwork(object):
 			#pdb.set_trace()
 			if testing:
 				saver.restore(sess, tf.train.latest_checkpoint(self.model_dir))
+				
 				'''
 				Label_list=[var for var in save_variables if '/Labeled/' in str(var)]
 				saver2 = tf.train.Saver(Label_list, max_to_keep=1)
 				saver2.restore(sess, tf.train.latest_checkpoint('saves/SemEval15/DM_modified/GraphParserNetwork1iter_600unary_200hidden_batch6000_sep_embed_dm_001_subtoken_1init_LBP'))
 				'''
 			else:
-				saver.restore(sess, tf.train.latest_checkpoint(self.save_dir))
+				saver.restore(sess, tf.train.latest_checkpoint(self.model_dir))
+			if self.use_bert and not self.pretrained_bert:
+				if self.bertvocab.is_training:
+					self.bertvocab.modelRestore(sess,list(bert_variables),model_dir=os.path.join(self.model_dir,'bert'))
+				else:
+					self.bertvocab.modelRestore(sess,list(bert_variables))
+
+			parse_outputs.id_buff=parseset.id_buff
 			if testing:
 				if not gen_tree:
 					self.parse_score(parseset, parse_outputs, sess, output_dir=output_dir, output_filename=output_filename, debug=debug, check_iter=check_iter)
@@ -619,7 +788,7 @@ class BaseNetwork(object):
 							if (target_graph==q2change).all() and q2change.shape[1]<9:
 								print(target_sent)
 								#continue
-								pdb.set_trace()
+								# pdb.set_trace()
 								'''
 								np.set_printoptions(precision=2,linewidth=200)
 								vj=1
@@ -743,7 +912,10 @@ class BaseNetwork(object):
 			feed_dict = dataset.set_placeholders(indices)
 			probabilities = sess.run(probability_tensors, feed_dict=feed_dict)
 			predictions = graph_outputs.probs_to_preds(probabilities, lengths, get_argmax=get_argmax)
-			tokens.update({vocab.field: vocab[predictions[vocab.field]] for vocab in self.output_vocabs})
+			try:
+				tokens.update({vocab.field: vocab[predictions[vocab.field]] for vocab in self.output_vocabs})
+			except:
+				pdb.set_trace()
 			graph_outputs.cache_predictions(tokens, indices)
 
 		if output_dir is None and output_filename is None:
@@ -969,8 +1141,14 @@ class BaseNetwork(object):
 	def id_vocab(self):
 		return self._id_vocab
 	@property
+	def node_id_vocab(self):
+		return self._node_id_vocab
+	@property
 	def input_vocabs(self):
 		return self._input_vocabs
+	@property
+	def decoder_vocabs(self):
+		return self._decoder_vocabs
 	@property
 	def throughput_vocabs(self):
 		return self._throughput_vocabs
@@ -1117,3 +1295,37 @@ class BaseNetwork(object):
 			return self._config.getint(self, 'switch_iter')
 		except:
 			return 500
+	@property
+	def get_nodes_path(self):
+		return self._config.get('BaseNetwork', 'nodes_path')
+
+	@property
+	def dev_mst(self):
+		try:
+			return self._config.getboolean(self, 'dev_mst')
+		except:
+			return False
+	@property
+	def average_AS(self):
+		try:
+			return self._config.getboolean(self, 'average_as')
+		except:
+			return False
+	@property
+	def loss_based_decay_schedule(self):
+		try:
+			return self._config.get('Optimizer', 'loss_based_decay_schedule')=='True'
+		except:
+			return False
+	@property
+	def improvement_based_decay_schedule(self):
+		try:
+			return self._config.get('Optimizer', 'improvement_based_decay_schedule')=='True'
+		except:
+			return False
+	@property
+	def decay_steps(self):
+		try:
+			return int(self._config.get('Optimizer', 'decay_steps'))
+		except:
+			return False

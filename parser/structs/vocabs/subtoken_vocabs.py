@@ -136,8 +136,10 @@ class SubtokenVocab(CountVocab):
 
     tokens = set()
     for train_conllu in train_conllus:
-      with codecs.open(train_conllu, encoding='utf-8', errors='ignore') as f:
-        for line in f:
+      # with codecs.open(train_conllu, encoding='utf-8', errors='ignore') as f:
+      with open(train_conllu,encoding='utf8') as f:
+        reader=f.readlines()
+        for line in reader:
           line = line.strip()
           if line and not line.startswith('#'):
             line = line.split('\t')

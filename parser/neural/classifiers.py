@@ -424,9 +424,405 @@ def diagonal_bilinear_layer(layer1, layer2, hidden_func=nonlin.relu, hidden_keep
 	#layer = hidden_func(layer)
 	return layer
 
+#===============================================================
+def trilinear_label_layer(label_layer, hidden_keep_prob=1., weight_type=1):
+	""""""
+	#here is token classifier
+	layer_shape = nn.get_sizes(label_layer)
+	bucket_size = layer_shape[-2]
+	input1_size = layer_shape.pop()
+	input_size = input1_size
+	ones_shape = tf.stack(layer_shape + [1])
+	if weight_type==1:
+		weights = tf.get_variable('Weights', shape=[input_size, input_size], initializer=tf.random_normal_initializer(stddev=0.01))
+		weights2 = tf.get_variable('Weights2', shape=[input_size, input_size], initializer=tf.random_normal_initializer(stddev=0.01))
+		weights3 = tf.get_variable('Weights3', shape=[input_size, input_size], initializer=tf.random_normal_initializer(stddev=0.01))
+		tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(weights))
+		tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(weights2))
+		tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(weights3))
+		biases1 = tf.get_variable('Biases1', shape=[1, input_size], initializer=tf.zeros_initializer)
+		biases2 = tf.get_variable('Biases2', shape=[1, input_size], initializer=tf.zeros_initializer)
+		biases3 = tf.get_variable('Biases3', shape=[1, input_size], initializer=tf.zeros_initializer)
+		#======================way1================================
+		#(n x m x m x d) * (d x d) -> (n x m x m x d)
+		label_layer1=tf.tensordot(label_layer,weights, axes=[[-1],[0]])+biases1
+		label_layer2=tf.tensordot(label_layer,weights2, axes=[[-1],[0]])+biases2
+		label_layer3=tf.tensordot(label_layer,weights3, axes=[[-1],[0]])+biases3
+	if weight_type==2:
+		weights = tf.get_variable('Weights', shape=[1,input_size], initializer=tf.truncated_normal_initializer())
+		tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(weights))
+		#======================way1================================
+		#(n x m x m x d) * (d x d) -> (n x m x m x d)
+		label_layer=label_layer*weights
+	#(n x ma x mb x d) * (n x ma x mc x d) -> (n x ma x mb x mc)
+	label_sib=tf.einsum('nabd,nacd->nabc',label_layer1, label_layer1)
+	label_cop=tf.einsum('nabd,ncbd->nabc',label_layer2, label_layer2)
+	label_gp=tf.einsum('nabd,nbcd->nabc',label_layer3, label_layer3)
+	return label_sib,label_cop,label_gp
+#===============================================================
+def diagonal_trilinear_classifier(layer1, layer2, layer3, output_size, hidden_keep_prob=1., add_linear=True):
+	""""""
+	#here is token classifier
+	layer_shape = nn.get_sizes(layer1)
+	bucket_size = layer_shape[-2]
+	input1_size = layer_shape.pop()
+	input2_size = layer2.get_shape().as_list()[-1]
+	input3_size = layer3.get_shape().as_list()[-1]
+	assert input1_size == input2_size, "Inputs to diagonal_full_bilinear_classifier don't match"
+	input_size = input1_size
+	ones_shape = tf.stack(layer_shape + [1])
+	
+	weights = tf.get_variable('Weights', shape=[input_size, input_size, output_size], initializer=tf.zeros_initializer)
+	tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(weights))
+	if add_linear:
+		weights1 = tf.get_variable('Weights1', shape=[input_size, output_size], initializer=tf.zeros_initializer)
+		tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(weights1))
+		weights2 = tf.get_variable('Weights2', shape=[input_size, output_size], initializer=tf.zeros_initializer)
+		tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(weights2))
+		weights3 = tf.get_variable('Weights2', shape=[input_size, output_size], initializer=tf.zeros_initializer)
+		tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(weights3))
+	biases = tf.get_variable('Biases', shape=[output_size], initializer=tf.zeros_initializer)
+	if hidden_keep_prob < 1.:
+		noise_shape = tf.stack(layer_shape[:-1] + [1, input_size])
+		layer1 = nn.dropout(layer1, hidden_keep_prob, noise_shape=noise_shape)
+		layer2 = nn.dropout(layer2, hidden_keep_prob, noise_shape=noise_shape)
+		layer3 = nn.dropout(layer3, hidden_keep_prob, noise_shape=noise_shape)
+	
+	if add_linear: #why here do not use weights2?
+		# (n x m x d) -> (nm x d)
+		lin_layer1 = nn.reshape(layer1, [-1, input_size])
+		# (nm x d) * (d x o) -> (nm x o)
+		lin_layer1 = tf.matmul(lin_layer1, weights1)
+		# (nm x o) -> (n x m x o)
+		lin_layer1 = nn.reshape(lin_layer1, layer_shape + [output_size])
+		# (n x m x o) -> (n x m x o x 1)
+		lin_layer1 = tf.expand_dims(lin_layer1, axis=-1)
+		# (n x m x d) -> (nm x d)
+		lin_layer2 = nn.reshape(layer2, [-1, input_size])
+		# (nm x d) * (d x o) -> (nm x o)
+		lin_layer2 = tf.matmul(lin_layer2, weights2)
+		# (nm x o) -> (n x m x o)
+		lin_layer2 = nn.reshape(lin_layer2, layer_shape + [output_size])
+		# (n x m x o) -> (n x o x m)
+		lin_layer2 = tf.transpose(lin_layer2, [0, 2, 1])
+		# (n x o x m) -> (n x 1 x o x m)
+		lin_layer2 = tf.expand_dims(lin_layer2, axis=-3)
+
+		# (n x m x d) -> (nm x d)
+		lin_layer3 = nn.reshape(layer3, [-1, input_size])
+		# (nm x d) * (d x o) -> (nm x o)
+		lin_layer3 = tf.matmul(lin_layer3, weights3)
+		# (nm x o) -> (n x m x o)
+		lin_layer3 = nn.reshape(lin_layer3, layer_shape + [output_size])
+		# (n x m x o) -> (n x o x m)
+		lin_layer3 = tf.transpose(lin_layer3, [0, 2, 1])
+		# (n x o x m) -> (n x 1 x o x m)
+		lin_layer3 = tf.expand_dims(lin_layer3, axis=-3)
+	
+	# (n x m x d) -> (n x m x 1 x d)
+	layer1 = nn.reshape(layer1, [-1, bucket_size, 1, input_size])
+	# (n x m x d) -> (n x m x d)
+	layer2 = nn.reshape(layer2, [-1, bucket_size, input_size])
+	# (d x o) -> (o x d)
+	weights = tf.transpose(weights, [1, 0])
+	# (o) -> (o x 1)
+	biases = nn.reshape(biases, [output_size, 1])
+	# means every word in layer1 have m label?
+	# (n x m x 1 x d) (*) (o x d) -> (n x m x o x d)
+	layer = layer1 * weights
+	# (n x m x o x d) -> (n x mo x d)
+	layer = nn.reshape(layer, [-1, bucket_size*output_size, input_size])
+	# (n x mo x d) * (n x m x d) -> (n x mo x m)
+	layer = tf.matmul(layer, layer2, transpose_b=True)
+	# (n x mo x m) -> (n x m x o x m)
+	layer = nn.reshape(layer, layer_shape + [output_size, bucket_size])
+	if add_linear:
+		# (n x m x o x m) + (n x 1 x o x m) + (n x m x o x 1) -> (n x m x o x m)
+		layer += lin_layer1 + lin_layer2
+	# (n x m x o x m) + (o x 1) -> (n x m x o x m)
+	layer += biases
+	return layer
+
+
+#===============================================================
+def bilinear_discriminator(layer1, layer2, hidden_keep_prob=1., add_linear=True, target_model='CRF', tri_std=0.5):
+	""""""
+	#pdb.set_trace()
+	layer_shape = nn.get_sizes(layer1)
+	bucket_size = layer_shape[-2]
+	input1_size = layer_shape.pop()+1
+	input2_size = layer2.get_shape().as_list()[-1]+1
+	ones_shape = tf.stack(layer_shape + [1])
+	if target_model=='CRF':
+		weights = tf.get_variable('Weights', shape=[input1_size, input2_size], initializer=tf.random_normal_initializer(stddev=tri_std))
+	elif target_model=='LBP':
+		weights = tf.get_variable('Weights', shape=[input1_size, input2_size], initializer=tf.random_normal_initializer(stddev=tri_std))
+	#weights = tf.get_variable('Weights', shape=[input1_size, input2_size], initializer=tf.truncated_normal_initializer())
+	tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(weights))
+	if hidden_keep_prob < 1.:
+		noise_shape1 = tf.stack(layer_shape[:-1] + [1, input1_size-1])
+		noise_shape2 = tf.stack(layer_shape[:-1] + [1, input2_size-1])
+		layer1 = nn.dropout(layer1, hidden_keep_prob, noise_shape=noise_shape1)
+		layer2 = nn.dropout(layer2, hidden_keep_prob, noise_shape=noise_shape2)
+	ones = tf.ones(ones_shape)
+	layer1 = tf.concat([layer1, ones], -1)
+	layer2 = tf.concat([layer2, ones], -1)
+	
+	# (n x m x d) -> (nm x d)
+	layer1 = nn.reshape(layer1, [-1, input1_size])
+	# (n x m x d) -> (n x m x d)
+	layer2 = tf.reshape(layer2, [-1, bucket_size, input2_size])
+	
+	# (nm x d) * (d x d) -> (nm x d)
+	layer = tf.matmul(layer1, weights) #here is the u matrix in the paper?
+	# (nm x d) -> (n x m x d)
+	layer = nn.reshape(layer, [-1, bucket_size, input2_size])
+	# (n x m x d) * (n x m x d) -> (n x m x m)
+	layer = tf.matmul(layer, layer2, transpose_b=True)
+	# (n x mo x m) -> (n x m x m)
+	layer = nn.reshape(layer, layer_shape + [bucket_size])
+	# (n x ma x mb)
+	return layer
 
 
 
+
+#===============================================================
+def trilinear_discriminator_old(layer1, layer2, layer3, hidden_keep_prob=1., add_linear=True):
+	""""""
+	
+	layer_shape = nn.get_sizes(layer1)
+	bucket_size = layer_shape[-2]
+	input1_size = layer_shape.pop()+1
+	input2_size = layer2.get_shape().as_list()[-1]+1
+	#here add a third layer
+	input3_size = layer3.get_shape().as_list()[-1]+1
+	ones_shape = tf.stack(layer_shape + [1])
+	#(d x d x d) layer1=axis0, layer2=axis2, layer3=axis1
+	weights = tf.get_variable('trilinear_Weights', shape=[input1_size, input3_size, input2_size], initializer=tf.truncated_normal_initializer())
+	tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(weights))
+	if hidden_keep_prob < 1.:
+		noise_shape1 = tf.stack(layer_shape[:-1] + [1, input1_size-1])
+		noise_shape2 = tf.stack(layer_shape[:-1] + [1, input2_size-1])
+		noise_shape3 = tf.stack(layer_shape[:-1] + [1, input3_size-1])
+		layer1 = nn.dropout(layer1, hidden_keep_prob, noise_shape=noise_shape1)
+		layer2 = nn.dropout(layer2, hidden_keep_prob, noise_shape=noise_shape2)
+		layer3 = nn.dropout(layer3, hidden_keep_prob, noise_shape=noise_shape3)
+	ones = tf.ones(ones_shape)
+	layer1 = tf.concat([layer1, ones], -1)
+	layer2 = tf.concat([layer2, ones], -1)
+	layer3 = tf.concat([layer3, ones], -1)
+	#pdb.set_trace()
+	# (n x m x d) -> (nm x d)
+	layer1 = nn.reshape(layer1, [-1, input1_size])
+	# (n x m x d) -> (nm x d) why do this?
+	layer2 = tf.reshape(layer2, [-1, bucket_size, input2_size])
+	# (n x m x d) -> (nm x d)
+	layer3 = tf.reshape(layer3, [-1, bucket_size, input3_size])
+	
+	# (nm x d) * (d x d x d) -> (nm x d x d)
+	layer = tf.tensordot(layer1, weights, axes=[[1], [0]]) 
+	# (nm x d x d) -> (nm x d x d)
+	layer = nn.reshape(layer, [-1, bucket_size, input3_size, input2_size])
+	# (n x m x d x d) * (n x m x d) -> (n x m x d x m)
+	# here ab infers the n and m in layer, and a c infer n m in layer2, so abij,acj->abic
+	layer = tf.einsum('abij,acj->abic', layer, layer2)
+	# (n x m x d x m) * (n x m x d) -> (n x m x m x m)
+	layer = tf.einsum('abic,adi->abdc', layer, layer3)
+	# (n x mo x m x m) -> (n x m x m x m)
+	layer = nn.reshape(layer, layer_shape + [bucket_size]*2)
+	# Here return a (n x m x m x m) graph, so how to use it?
+	#return layer, weights
+	# layer = (n x ma x mc x mb) -> (n x ma x mb x mc)
+	layer = tf.transpose(layer, perm=[0,1,3,2])
+	#return layer
+	return layer, weights
+
+#===============================================================
+def trilinear_discriminator_test2(layer1, layer2, layer3, hidden_keep_prob=1., add_linear=True):
+	""""""
+	#pdb.set_trace()
+	layer_shape = nn.get_sizes(layer1)
+	bucket_size = layer_shape[-2]
+	input1_size = layer_shape.pop()+1
+	input2_size = layer2.get_shape().as_list()[-1]+1
+	#here add a third layer
+	input3_size = layer3.get_shape().as_list()[-1]+1
+	ones_shape = tf.stack(layer_shape + [1])
+	#(d x d x d) layer1=axis0, layer2=axis2, layer3=axis1
+	weights1 = tf.get_variable('trilinear_Weights1', shape=[input1_size, input2_size], initializer=tf.truncated_normal_initializer())
+	tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(weights1))
+	weights2 = tf.get_variable('trilinear_Weights2', shape=[input2_size, input3_size], initializer=tf.truncated_normal_initializer())
+	tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(weights2))
+	weights3 = tf.get_variable('trilinear_Weights3', shape=[input3_size, input1_size], initializer=tf.truncated_normal_initializer())
+	tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(weights3))
+	if hidden_keep_prob < 1.:
+		noise_shape1 = tf.stack(layer_shape[:-1] + [1, input1_size-1])
+		noise_shape2 = tf.stack(layer_shape[:-1] + [1, input2_size-1])
+		noise_shape3 = tf.stack(layer_shape[:-1] + [1, input3_size-1])
+		layer1 = nn.dropout(layer1, hidden_keep_prob, noise_shape=noise_shape1)
+		layer2 = nn.dropout(layer2, hidden_keep_prob, noise_shape=noise_shape2)
+		layer3 = nn.dropout(layer3, hidden_keep_prob, noise_shape=noise_shape3)
+	ones = tf.ones(ones_shape)
+	layer1 = tf.concat([layer1, ones], -1)
+	layer2 = tf.concat([layer2, ones], -1)
+	layer3 = tf.concat([layer3, ones], -1)
+
+
+	#pdb.set_trace()
+	# (n x m x d) -> (nm x d)
+	layer1_h = nn.reshape(layer1, [-1, input1_size])
+	# (n x m x d) -> (nm x d) why do this?
+	layer2_h = tf.reshape(layer2, [-1, input2_size])
+	# (n x m x d) -> (nm x d)
+	layer3_h = tf.reshape(layer3, [-1, input3_size])
+	
+
+
+	# (nm x d) * (d x d) -> (nm x d)
+	bi_layer1 = tf.matmul(layer1_h, weights1) 
+	# (nm x d) -> (n x m x d)
+	bi_layer1 = nn.reshape(bi_layer1, [-1, bucket_size, input1_size])
+	# (n x m x d) * (n x m x d) -> (n x m x m)
+	bi_layer1 = tf.matmul(bi_layer1, layer2, transpose_b=True)
+	# (n x m x m) -> (n x ma x mb)
+	bi_layer1 = nn.reshape(bi_layer1, layer_shape + [bucket_size])
+	# (n x m x m) -> (n x ma x mb x 1)
+	bi_layer1 = tf.expand_dims(bi_layer1, -1)
+
+	# (nm x d) * (d x d) -> (nm x d)
+	bi_layer2 = tf.matmul(layer2_h, weights2) 
+	# (nm x d) -> (n x m x d)
+	bi_layer2 = nn.reshape(bi_layer2, [-1, bucket_size, input2_size])
+	# (n x m x d) * (n x m x d) -> (n x m x m)
+	bi_layer2 = tf.matmul(bi_layer2, layer3, transpose_b=True)
+	# (n x m x m) -> (n x mb x mc)
+	bi_layer2 = nn.reshape(bi_layer2, layer_shape + [bucket_size])
+	# (n x m x m) -> (n x 1 x mb x mc)
+	bi_layer2 = tf.expand_dims(bi_layer2, -3)
+
+	# (nm x d) * (d x d) -> (nm x d)
+	bi_layer3 = tf.matmul(layer1_h, weights3) 
+	# (nm x d) -> (n x m x d)
+	bi_layer3 = nn.reshape(bi_layer3, [-1, bucket_size, input2_size])
+	# (n x m x d) * (n x m x d) -> (n x m x m)
+	bi_layer3 = tf.matmul(bi_layer3, layer3, transpose_b=True)
+	# (n x m x m) -> (n x ma x mc)
+	bi_layer3 = nn.reshape(bi_layer3, layer_shape + [bucket_size])
+	# (n x m x m) -> (n x ma x 1 x mc)
+	bi_layer3 = tf.expand_dims(bi_layer3, -2)
+	# (n x ma x mb x 1) + (n x 1 x mb x mc) + (n x ma x 1 x mc) -> (n x ma x mb x mc)
+	layer = bi_layer1 + bi_layer2 + bi_layer3
+	#return layer
+	return layer
+
+#===============================================================
+def trilinear_discriminator_test(layer1, layer2, layer3, hidden_keep_prob=1., add_linear=True):
+	""""""
+	
+	layer_shape = nn.get_sizes(layer1)
+	bucket_size = layer_shape[-2]
+	input1_size = layer_shape.pop()+1
+	input2_size = layer2.get_shape().as_list()[-1]+1
+	#here add a third layer
+	input3_size = layer3.get_shape().as_list()[-1]+1
+	ones_shape = tf.stack(layer_shape + [1])
+	#(d x d x d) layer1=axis0, layer2=axis2, layer3=axis1
+	weights1 = tf.get_variable('trilinear_Weights1', shape=[input1_size, input1_size], initializer=tf.truncated_normal_initializer())
+	tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(weights1))
+	weights2 = tf.get_variable('trilinear_Weights2', shape=[input2_size, input2_size], initializer=tf.truncated_normal_initializer())
+	tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(weights2))
+	weights3 = tf.get_variable('trilinear_Weights3', shape=[input3_size, input3_size], initializer=tf.truncated_normal_initializer())
+	tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, tf.nn.l2_loss(weights3))
+	if hidden_keep_prob < 1.:
+		noise_shape1 = tf.stack(layer_shape[:-1] + [1, input1_size-1])
+		noise_shape2 = tf.stack(layer_shape[:-1] + [1, input2_size-1])
+		noise_shape3 = tf.stack(layer_shape[:-1] + [1, input3_size-1])
+		layer1 = nn.dropout(layer1, hidden_keep_prob, noise_shape=noise_shape1)
+		layer2 = nn.dropout(layer2, hidden_keep_prob, noise_shape=noise_shape2)
+		layer3 = nn.dropout(layer3, hidden_keep_prob, noise_shape=noise_shape3)
+	ones = tf.ones(ones_shape)
+	layer1 = tf.concat([layer1, ones], -1)
+	layer2 = tf.concat([layer2, ones], -1)
+	layer3 = tf.concat([layer3, ones], -1)
+
+	#pdb.set_trace()
+	# (n x m x d) -> (nm x d)
+	layer1 = nn.reshape(layer1, [-1, input1_size])
+	# (n x m x d) -> (nm x d) why do this?
+	layer2 = tf.reshape(layer2, [-1, input2_size])
+	# (n x m x d) -> (nm x d)
+	layer3 = tf.reshape(layer3, [-1, input3_size])
+	
+	#pdb.set_trace()
+	#Does here need any dropout?
+	# (nm x d) + (nm x d) -> (nm x 2d)
+	cat_layer1 = tf.concat([layer2, layer3], -1)
+	# (nm x 2d) -> (nm x d)
+	with tf.variable_scope('linear1'):
+		cat_layer1 = hidden(cat_layer1, input1_size, hidden_func=nonlin.identity, hidden_keep_prob=1.)
+	# (nm x d) + (nm x d) -> (nm x 2d)
+	cat_layer2 = tf.concat([layer1, layer3], -1)
+	# (nm x 2d) -> (nm x d)
+	with tf.variable_scope('linear2'):
+		cat_layer2 = hidden(cat_layer2, input2_size, hidden_func=nonlin.identity, hidden_keep_prob=1.)
+	# (nm x d) + (nm x d) -> (nm x 2d)
+	cat_layer3 = tf.concat([layer1, layer2], -1)
+	# (nm x 2d) -> (nm x d)
+	with tf.variable_scope('linear3'):
+		cat_layer3 = hidden(cat_layer3, input3_size, hidden_func=nonlin.identity, hidden_keep_prob=1.)
+
+	# (nm x d) -> (n x m x d)
+	cat_layer1 = nn.reshape(cat_layer1, [-1, bucket_size, input2_size])
+	cat_layer2 = nn.reshape(cat_layer2, [-1, bucket_size, input2_size])
+	cat_layer3 = nn.reshape(cat_layer3, [-1, bucket_size, input2_size])
+
+	# (nm x d) * (d x d) -> (nm x d)
+	bi_layer1 = tf.matmul(layer1, weights1) 
+	# (nm x d) -> (n x m x d)
+	bi_layer1 = nn.reshape(bi_layer1, [-1, bucket_size, input2_size])
+	# (n x m x d) * (n x m x d) -> (n x m x m)
+	bi_layer1 = tf.matmul(bi_layer1, cat_layer1, transpose_b=True)
+	# (n x m x m) -> (n x ma x mbc)
+	bi_layer1 = nn.reshape(bi_layer1, layer_shape + [bucket_size])
+	# (n x m x m) -> (n x ma x mbc x 1)
+	bi_layer1 = tf.expand_dims(bi_layer1, -1)
+	# (n x m x m) -> (n x ma x mb x mc)
+	bi_layer1 = tf.tile(bi_layer1, [1,1,1,bucket_size])
+
+	# (nm x d) * (d x d) -> (nm x d)
+	bi_layer2 = tf.matmul(layer2, weights2) 
+	# (nm x d) -> (n x m x d)
+	bi_layer2 = nn.reshape(bi_layer2, [-1, bucket_size, input2_size])
+	# (n x m x d) * (n x m x d) -> (n x m x m)
+	bi_layer2 = tf.matmul(bi_layer2, cat_layer2, transpose_b=True)
+	# (n x m x m) -> (n x mb x mac)
+	bi_layer2 = nn.reshape(bi_layer2, layer_shape + [bucket_size])
+	# (n x m x m) -> (n x mb x mac x 1)
+	bi_layer2 = tf.expand_dims(bi_layer2, -1)
+	# (n x m x m) -> (n x mb x ma x mc)
+	bi_layer2 = tf.tile(bi_layer2, [1,1,1,bucket_size])
+	# (n x mb x ma x mc) -> (n x ma x mb x mc)
+	bi_layer2 = tf.transpose(bi_layer2, [0,2,1,3])
+
+	# (nm x d) * (d x d) -> (nm x d)
+	bi_layer3 = tf.matmul(layer3, weights3) 
+	# (nm x d) -> (n x m x d)
+	bi_layer3 = nn.reshape(bi_layer3, [-1, bucket_size, input2_size])
+	# (n x m x d) * (n x m x d) -> (n x m x m)
+	bi_layer3 = tf.matmul(bi_layer3, cat_layer3, transpose_b=True)
+	# (n x m x m) -> (n x mc x mab)
+	bi_layer3 = nn.reshape(bi_layer3, layer_shape + [bucket_size])
+	# (n x m x m) -> (n x mc x mab x 1)
+	bi_layer3 = tf.expand_dims(bi_layer3, -1)
+	# (n x m x m) -> (n x mc x ma x mb)
+	bi_layer3 = tf.tile(bi_layer3, [1,1,1,bucket_size])
+	# (n x mc x ma x mb) -> (n x ma x mb x mc)
+	bi_layer3 = tf.transpose(bi_layer3, [0,2,3,1])
+
+	layer = bi_layer1 + bi_layer2 + bi_layer3
+	#return layer
+	return layer
 
 #===============================================================
 def trilinear_discriminator_new(layer1, layer2, layer3, hidden_keep_prob=1., add_linear=True,target_model='CRF',tri_std=0.01):

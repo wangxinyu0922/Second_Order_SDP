@@ -55,7 +55,7 @@ class XPOSVocab(CoNLLUVocab):
   _field = 'xpos'
   _conllu_idx = 4
 class UFeatsVocab(CoNLLUVocab):
-  _field = 'ufeats'
+  _field = 'frame'
   _conllu_idx = 5
 class DepheadVocab(CoNLLUVocab):
   _field = 'dephead'
@@ -69,3 +69,6 @@ class SemheadVocab(CoNLLUVocab):
 class SemrelVocab(CoNLLUVocab):
   _field = 'semrel'
   _conllu_idx = 8
+class AttrVocab(CoNLLUVocab):
+  _field = 'attr'
+  _conllu_idx = 9

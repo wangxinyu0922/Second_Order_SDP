@@ -42,6 +42,10 @@ class IndexVocab(BaseVocab):
 		self.PAD_IDX = -1
 		self.ROOT_STR = '0'
 		self.ROOT_IDX = 0
+		self.BOS_STR = '<bos>'
+		self.BOS_IDX = 3
+		self.EOS_STR = '<eos>'
+		self.EOS_IDX = 4
 		return
 	
 	#=============================================================
@@ -65,6 +69,10 @@ class IndexVocab(BaseVocab):
 		
 		if token != '_':
 			return int(token)
+		elif token == self.BOS_STR:
+			return self.BOS_IDX
+		elif token == self.EOS_STR:
+			return self.EOS_IDX
 		else:
 			return -1
 	
@@ -73,6 +81,18 @@ class IndexVocab(BaseVocab):
 		""""""
 		
 		return self.ROOT_STR
+
+	#=============================================================
+	def get_bos(self):
+		""""""
+		
+		return self.BOS_STR
+	
+	#=============================================================
+	def get_eos(self):
+		""""""
+		
+		return self.EOS_STR
 	
 	#=============================================================
 	def get_bilinear_classifier(self, layer, token_weights, variable_scope=None, reuse=False):
@@ -309,6 +329,8 @@ class GraphIndexVocab(IndexVocab):
 		
 		kwargs['placeholder_shape'] = [None, None, None]
 		super(GraphIndexVocab, self).__init__(*args, **kwargs)
+		self.ROOT_STR = '0'
+		self.ROOT_IDX = 0
 		return
 	
 	#=============================================================
@@ -474,7 +496,7 @@ class GraphIndexVocab(IndexVocab):
 		outputs['loss'] = loss
 		if debug:
 			outputs['temp_targets'] = tf.argmax(unlabeled_targets,axis=-1, output_type=tf.int32)
-			outputs['temp_predictions'] = temp_predictions
+			# outputs['temp_predictions'] = temp_predictions
 		outputs['unlabeled_predictions'] = predictions
 		outputs['n_unlabeled_true_positives'] = n_true_positives
 		outputs['n_unlabeled_false_positives'] = n_false_positives

@@ -21,10 +21,10 @@ from __future__ import print_function
 
 import numpy as np
 import tensorflow as tf
-
+import pdb
 from . import nn
 from .classifiers import linear_attention
-
+from bert_serving.client import BertClient
 #***************************************************************
 def dropout(layer, embed_keep_prob):
   """"""
@@ -109,8 +109,23 @@ def token_embedding_lookup(n_entries, embed_size, ids, nonzero_init=False, reuse
 #===============================================================
 def pretrained_embedding_lookup(params, linear_size, ids, name='', reuse=True):
   """"""
-
+  #pdb.set_trace()
   layer = tf.nn.embedding_lookup(params, ids)
+  batch_size, bucket_size, input_size = nn.get_sizes(layer)
+  shape = [input_size, linear_size]
+  weights = tf.get_variable(name+'Transformation', shape=shape)#, initializer=tf.orthogonal_initializer)
+  layer = tf.reshape(layer, [-1, input_size])
+  layer = tf.matmul(layer, weights)
+  layer = tf.reshape(layer, tf.stack([batch_size, bucket_size, linear_size]))
+  return layer
+
+#===============================================================
+def Bert_embedding_lookup(params, linear_size, ids, name='', reuse=True, bc=None,max_length=60):
+  """"""
+  #pdb.set_trace()
+  if self.bc==None:
+    raise ValueError("bert client is None!") 
+  layer = bc.encode(texts2, is_tokenized=True)
   batch_size, bucket_size, input_size = nn.get_sizes(layer)
   shape = [input_size, linear_size]
   weights = tf.get_variable(name+'Transformation', shape=shape)#, initializer=tf.orthogonal_initializer)

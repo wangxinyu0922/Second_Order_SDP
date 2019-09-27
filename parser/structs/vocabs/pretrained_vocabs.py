@@ -44,7 +44,7 @@ import tensorflow as tf
 from parser.structs.vocabs.base_vocabs import SetVocab
 from . import conllu_vocabs as cv
 from parser.neural import embeddings
-
+import pdb
 #***************************************************************
 # TODO maybe change self.name to something more like self._save_str?
 # Ideally there should be Word2vecVocab, GloveVocab, FasttextVocab,
@@ -58,7 +58,7 @@ class PretrainedVocab(SetVocab):
     
     if (pretrained_file is None) != (name is None):
       raise ValueError("You can't pass in a value for only one of pretrained_file and name to PretrainedVocab.__init__")
-    
+    #pdb.set_trace()
     if pretrained_file is None:
       pretrained_file = config.getstr(self, 'pretrained_file')
       name = config.getstr(self, 'name')
@@ -138,7 +138,7 @@ class PretrainedVocab(SetVocab):
                 cur_idx += 1
             else:
               break
-    
+    #pdb.set_trace()
     self._embed_size = shape[1]
     self._tokens = tokens
     self._embeddings = embeddings
