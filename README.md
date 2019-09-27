@@ -1,7 +1,7 @@
 # Second Order SDP
 Second Order Parser for Semantic Dependency Parsing
 
-This repo contains the code forked from [Parser-v3](https://github.com/tdozat/Parser-v3) and used for the semantic dependency parser in Wang et al. (2019), [Second-Order Semantic Dependency Parsing with End-to-End Neural Networks](https://arxiv.org/abs/1906.07880). If you find our code is useful, please cite:
+This repo contains the code forked from [Parser-v3](https://github.com/tdozat/Parser-v3) and used for the semantic dependency parser in Wang et al. (2019), [Second-Order Semantic Dependency Parsing with End-to-End Neural Networks](https://arxiv.org/abs/1906.07880) and [CoNLL 2019 shared task](http://mrp.nlpl.eu/) (SDP part only). If you find our code is useful, please cite:
 ```
 @inproceedings{wang-etal-2019-second,
     title = "Second-Order Semantic Dependency Parsing with End-to-End Neural Networks",
@@ -16,6 +16,20 @@ This repo contains the code forked from [Parser-v3](https://github.com/tdozat/Pa
     url = "https://www.aclweb.org/anthology/P19-1454",
     pages = "4609--4618",}
 ```
+```
+@inproceedings{Wan:Liu:Jia:19,
+  author = {Wang, Xinyu and Liu, Yixian and Jia, Zixia
+            and Jiang, Chengyue and Tu, Kewei},
+  title = {{ShanghaiTech} at {MRP}~2019:
+           {S}equence-to-Graph Transduction with Second-Order Edge Inference
+           for Cross-Framework Meaning Representation Parsing},
+  booktitle = CONLL:19:U,
+  address = L:CONLL:19,
+  pages = {\pages{--}{??}{??}},
+  year = 2019
+}
+```
+
 ## How to use
 ### Training
 Our second order parser can be trained by simply running
@@ -40,7 +54,8 @@ To avoid out of memory in training phase, our parser should be trained with 12GB
 If you want to see some details of our parser, the source code for our parser is in `parser/structs/vocabs/second_order_vocab.py` for Mean Field Variational Inference and `second_order_LBP_vocab.py` for Loopy Belief Propagation in the same directory.
 
 ## Train With Bert Embedding
-Our code for [CoNLL 2019 shared task](http://mrp.nlpl.eu/) (SDP part) will be updated soon.
+Detailed description will be updated soon.
+<!-- Our code for [CoNLL 2019 shared task](http://mrp.nlpl.eu/) (SDP part) will be updated soon. -->
 
 ## Contact
 If you have any questions, feel free to contact with me through [email](mailto:wangxy1@shanghaitech.edu.cn).
