@@ -31,7 +31,6 @@ import tensorflow as tf
 
 from parser.base_network import BaseNetwork
 from parser.neural import nn, nonlin, embeddings, recurrent, classifiers
-from parser.structs.vocabs.pointer_generator import PointerGenerator
 import pdb
 #***************************************************************
 class GraphParserNetwork(BaseNetwork):

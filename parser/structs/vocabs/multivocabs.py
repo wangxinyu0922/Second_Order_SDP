@@ -29,7 +29,7 @@ from . import token_vocabs as tv
 from . import pretrained_vocabs as pv
 from . import subtoken_vocabs as sv
 from . import bert_vocabs as bv
-from . import RNNDecoder_vocab as rv
+# from . import RNNDecoder_vocab as rv
 from parser.neural import embeddings
 import json
 import pdb
