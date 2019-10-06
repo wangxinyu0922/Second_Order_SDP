@@ -71,7 +71,7 @@ If you find our code is useful, please cite:
            for Cross-Framework Meaning Representation Parsing},
   booktitle = CONLL:19:U,
   address = L:CONLL:19,
-  pages = {\pages{--}{??}{??}},
+  pages = {\pages{--}{54}{64}},
   year = 2019
 }
 ```
