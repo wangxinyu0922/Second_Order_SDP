@@ -5,6 +5,7 @@ This repo contains the code forked from [Parser-v3](https://github.com/tdozat/Pa
 
 ## Requirements
 ```
+python3
 tensorflow-gpu>=1.12.0
 ```
 ## How to use
