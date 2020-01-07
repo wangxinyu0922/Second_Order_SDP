@@ -41,8 +41,11 @@ The parsed result will be saved `results/` directory. The `$SAVEDIR` is the dire
 
 ### Pretrained Model
 The pretrained model on DM can be download from the following links:
+
 [Baidu Netdisk](https://pan.baidu.com/s/1xc6z8tvf7HgCn6CycqkbkQ), Password: ecqe
+
 [Google Drive](https://drive.google.com/open?id=1HEw-4FYAToQxESD5lulfONnDk883PnGS)
+
 The model is trained with Bert and Glove embeddings considering there are no golden POS tags and lemmas in practice, the Labeled F1 score is `94.25` and `90.76` for `in-domain` and `out-of-domain` respectively.
 
 ## OOM issue
