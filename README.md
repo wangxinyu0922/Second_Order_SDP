@@ -39,6 +39,12 @@ python3 main.py --save_dir $SAVEDIR run $DATADIR --output_dir results
 ```
 The parsed result will be saved `results/` directory. The `$SAVEDIR` is the directory of the model, for example, if you trained with `config/sec_order.cfg`, the model will be saved in `saves/SemEval15/DM/MF_dm_3iter`. The `$DATADIR` is the directory of the data in `CONLLU` format.
 
+### Pretrained Model
+The pretrained model on DM can be download from the following links:
+[Baidu Netdisk](https://pan.baidu.com/s/1xc6z8tvf7HgCn6CycqkbkQ), Password: ecqe
+[Google Drive](https://drive.google.com/open?id=1HEw-4FYAToQxESD5lulfONnDk883PnGS)
+The model is trained with Bert and Glove embeddings considering there are no golden POS tags and lemmas in practice, the Labeled F1 score is `94.25` and `90.76` for `in-domain` and `out-of-domain` respectively.
+
 ## OOM issue
 To avoid out of memory in training phase, our parser should be trained with 12GB gpu memory, and no longer than 60 words for each sentence. The number of iterations for mean field variational inference is at most 3 and at most 2 for loopy belief propagation in a 12GB Titan X gpu. If you have a larger gpu, such as Tesla P40 24GB, loopy belief propation can be also trained with 3 iterations. To set the number of iterations, set `num_iteration` in `SecondOrderGraphIndexVocab` or `SecondOrderGraphLBPVocab` of the config file. Another way is reduce the training `batch_size` in `CoNLLUTrainset` of the config file.
 
