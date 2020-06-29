@@ -5,7 +5,7 @@ This repo contains the code forked from [Parser-v3](https://github.com/tdozat/Pa
 
 ## News
 
-The PyTorch Version for the Second-Order SDP parser is now available at [MultilangStructureKD](https://github.com/Alibaba-NLP/MultilangStructureKD)!
+**The PyTorch Version for the Second-Order SDP parser is now available at [MultilangStructureKD](https://github.com/Alibaba-NLP/MultilangStructureKD)!**
 
 ## Requirements
 ```
