@@ -3,6 +3,10 @@ Second Order Parser for Semantic Dependency Parsing
 
 This repo contains the code forked from [Parser-v3](https://github.com/tdozat/Parser-v3) and used for the semantic dependency parser in Wang et al. (2019), [Second-Order Semantic Dependency Parsing with End-to-End Neural Networks](https://arxiv.org/abs/1906.07880) and [CoNLL 2019 shared task](http://mrp.nlpl.eu/) (SDP part only). 
 
+## News
+
+The PyTorch Version for the Second-Order SDP parser is now available at [MultilangStructureKD](https://github.com/Alibaba-NLP/MultilangStructureKD)!
+
 ## Requirements
 ```
 python3
